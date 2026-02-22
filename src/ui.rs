@@ -114,7 +114,10 @@ pub fn render(f: &mut Frame, app: &mut App) {
     // A simple sun vector pointing right and slightly down
     let sun_vector = (1.0, 0.2, 0.0);
 
-    let globe = GlobeWidget { app: &mut *app, sun_vector };
+    let globe = GlobeWidget {
+        app: &mut *app,
+        sun_vector,
+    };
 
     f.render_widget(globe, f.area());
 
@@ -123,8 +126,15 @@ pub fn render(f: &mut Frame, app: &mut App) {
     if let Some(peer_id) = app.local_peer_id {
         net_info.push(ratatui::text::Line::from(format!("PeerID: {}", peer_id)));
     }
-    net_info.push(ratatui::text::Line::from(format!("Listening on: {:?}", app.listen_addrs)));
-    net_info.push(ratatui::text::Line::from(format!("Peers ({}): {:?}", app.peers.len(), app.peers)));
+    net_info.push(ratatui::text::Line::from(format!(
+        "Listening on: {:?}",
+        app.listen_addrs
+    )));
+    net_info.push(ratatui::text::Line::from(format!(
+        "Peers ({}): {:?}",
+        app.peers.len(),
+        app.peers
+    )));
 
     let info_widget = ratatui::widgets::Paragraph::new(net_info)
         .block(Block::default().borders(Borders::ALL).title("Network Info"))
@@ -137,4 +147,68 @@ pub fn render(f: &mut Frame, app: &mut App) {
         height: 6,
     };
     f.render_widget(info_widget, info_area);
+
+    // Overlay Chat Feed
+    let mut chat_lines = vec![];
+    for (sender, text) in app.chat_messages.iter().rev().take(10).rev() {
+        // libp2p PeerIds all start with `12D3KooW...` for Ed25519 keys, so it should show the END of the string to distinguish them.
+        let short_id = if sender.len() > 8 {
+            &sender[sender.len() - 8..]
+        } else {
+            sender
+        };
+        chat_lines.push(ratatui::text::Line::from(vec![
+            ratatui::text::Span::styled(
+                format!("{short_id}: "),
+                Style::default().fg(Color::Yellow),
+            ),
+            ratatui::text::Span::raw(text),
+        ]));
+    }
+
+    let chat_widget = ratatui::widgets::Paragraph::new(chat_lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Global Chat (/world)"),
+        )
+        .style(Style::default().fg(Color::White))
+        .wrap(ratatui::widgets::Wrap { trim: true });
+
+    let chat_area = ratatui::layout::Rect {
+        x: f.area().right().saturating_sub(40).max(0),
+        y: f.area().bottom().saturating_sub(12),
+        width: 40.min(f.area().width),
+        height: 12,
+    };
+    f.render_widget(chat_widget, chat_area);
+
+    // Overlay Input Box
+    if app.input_mode {
+        let input_widget = ratatui::widgets::Paragraph::new(app.input_buffer.as_str())
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Message")
+                    .border_style(Style::default().fg(Color::Yellow)),
+            )
+            .style(Style::default().fg(Color::White));
+
+        let input_area = ratatui::layout::Rect {
+            x: chat_area.x,
+            y: chat_area.bottom().saturating_sub(3),
+            width: chat_area.width,
+            height: 3,
+        };
+
+        // Clear background for input box
+        f.render_widget(ratatui::widgets::Clear, input_area);
+        f.render_widget(input_widget, input_area);
+
+        // Render Cursor
+        f.set_cursor_position(ratatui::layout::Position::new(
+            input_area.x + app.input_buffer.len() as u16 + 1,
+            input_area.y + 1,
+        ));
+    }
 }

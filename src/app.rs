@@ -20,6 +20,10 @@ pub struct App {
     pub local_peer_id: Option<libp2p::PeerId>,
     pub peers: Vec<libp2p::PeerId>,
     pub listen_addrs: Vec<libp2p::Multiaddr>,
+    // Chat State
+    pub chat_messages: Vec<(String, String)>, // (sender, text)
+    pub input_mode: bool,
+    pub input_buffer: String,
 }
 
 impl App {
@@ -33,6 +37,9 @@ impl App {
             local_peer_id: None,
             peers: Vec::new(),
             listen_addrs: Vec::new(),
+            chat_messages: Vec::new(),
+            input_mode: false,
+            input_buffer: String::new(),
         }
     }
 
@@ -41,19 +48,47 @@ impl App {
         self.rotation_y = (self.rotation_y + 0.05) % (std::f64::consts::PI * 2.0);
     }
 
-    pub fn handle_events(&mut self) -> io::Result<()> {
+    pub fn handle_events(&mut self, cmd_sender: &mut tokio::sync::mpsc::Sender<crate::network::NetworkCommand>) -> io::Result<()> {
         if let Event::Key(key) = event::read()? {
             if key.kind == KeyEventKind::Press {
-                self.handle_key(key);
+                self.handle_key(key, cmd_sender);
             }
         }
         Ok(())
     }
 
-    fn handle_key(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
-            _ => {}
+    fn handle_key(&mut self, key: KeyEvent, cmd_sender: &mut tokio::sync::mpsc::Sender<crate::network::NetworkCommand>) {
+        if self.input_mode {
+            match key.code {
+                KeyCode::Enter => {
+                    let msg = self.input_buffer.clone();
+                    self.input_buffer.clear();
+                    if !msg.is_empty() {
+                        let _ = cmd_sender.try_send(crate::network::NetworkCommand::PublishMessage(msg.clone()));
+                        // Optimistically render our own message
+                        let me = self.local_peer_id.map(|p| p.to_string()).unwrap_or_else(|| "Me".to_string());
+                        self.chat_messages.push((me, msg));
+                    }
+                    self.input_mode = false;
+                }
+                KeyCode::Char(c) => {
+                    self.input_buffer.push(c);
+                }
+                KeyCode::Backspace => {
+                    self.input_buffer.pop();
+                }
+                KeyCode::Esc => {
+                    self.input_mode = false;
+                    self.input_buffer.clear();
+                }
+                _ => {}
+            }
+        } else {
+            match key.code {
+                KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
+                KeyCode::Enter => self.input_mode = true,
+                _ => {}
+            }
         }
     }
 
@@ -69,6 +104,12 @@ impl App {
             }
             NetworkEvent::PeerDisconnected(peer_id) => {
                 self.peers.retain(|p| p != &peer_id);
+            }
+            NetworkEvent::MessageReceived { sender, text } => {
+                self.chat_messages.push((sender.to_string(), text));
+                if self.chat_messages.len() > 100 {
+                    self.chat_messages.remove(0); // keep it bounded
+                }
             }
         }
     }

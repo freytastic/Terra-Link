@@ -1,6 +1,7 @@
 mod app;
 mod globe;
 mod network;
+mod proto;
 mod tui;
 mod ui;
 
@@ -66,7 +67,7 @@ async fn run_app(
     terminal: &mut tui::Tui,
     app: &mut App,
     event_receiver: &mut mpsc::Receiver<NetworkEvent>,
-    _cmd_sender: mpsc::Sender<NetworkCommand>,
+    mut cmd_sender: mpsc::Sender<NetworkCommand>,
 ) -> io::Result<()> {
     // 10 FPS for now
     let tick_rate = Duration::from_millis(100);
@@ -95,7 +96,7 @@ async fn run_app(
         }
 
         if ratatui::crossterm::event::poll(Duration::from_millis(10))? {
-            app.handle_events()?;
+            app.handle_events(&mut cmd_sender)?;
             needs_render = true; // Input might change state
         }
 

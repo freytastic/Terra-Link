@@ -114,7 +114,27 @@ pub fn render(f: &mut Frame, app: &mut App) {
     // A simple sun vector pointing right and slightly down
     let sun_vector = (1.0, 0.2, 0.0);
 
-    let globe = GlobeWidget { app, sun_vector };
+    let globe = GlobeWidget { app: &mut *app, sun_vector };
 
     f.render_widget(globe, f.area());
+
+    // Overlay Network Info
+    let mut net_info = vec![];
+    if let Some(peer_id) = app.local_peer_id {
+        net_info.push(ratatui::text::Line::from(format!("PeerID: {}", peer_id)));
+    }
+    net_info.push(ratatui::text::Line::from(format!("Listening on: {:?}", app.listen_addrs)));
+    net_info.push(ratatui::text::Line::from(format!("Peers ({}): {:?}", app.peers.len(), app.peers)));
+
+    let info_widget = ratatui::widgets::Paragraph::new(net_info)
+        .block(Block::default().borders(Borders::ALL).title("Network Info"))
+        .style(Style::default().fg(Color::Cyan));
+
+    let info_area = ratatui::layout::Rect {
+        x: f.area().x,
+        y: f.area().bottom().saturating_sub(6),
+        width: 100.min(f.area().width),
+        height: 6,
+    };
+    f.render_widget(info_widget, info_area);
 }

@@ -5,5 +5,7 @@ edition = "2024"
 
 [dependencies]
 crossterm = "0.29.0"
+futures = "0.3.32"
+libp2p = { version = "0.56.0", features = ["tokio", "quic", "kad", "macros", "identify", "tcp", "noise", "yamux"] }
 ratatui = "0.30.0"
 tokio = { version = "1.49.0", features = ["full"] }

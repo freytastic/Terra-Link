@@ -1,4 +1,5 @@
 mod app;
+mod geo;
 mod globe;
 mod network;
 mod proto;
@@ -21,10 +22,18 @@ async fn main() -> io::Result<()> {
     if args.len() >= 3 {
         match args[1].as_str() {
             "listen" => {
-                listen_addr = Some(args[2].parse::<libp2p::Multiaddr>().expect("Invalid Multiaddr"));
+                listen_addr = Some(
+                    args[2]
+                        .parse::<libp2p::Multiaddr>()
+                        .expect("Invalid Multiaddr"),
+                );
             }
             "dial" => {
-                dial_addr = Some(args[2].parse::<libp2p::Multiaddr>().expect("Invalid Multiaddr"));
+                dial_addr = Some(
+                    args[2]
+                        .parse::<libp2p::Multiaddr>()
+                        .expect("Invalid Multiaddr"),
+                );
             }
             _ => {
                 println!("Usage: {} [listen|dial] <multiaddr>", args[0]);
@@ -53,7 +62,12 @@ async fn main() -> io::Result<()> {
     }
     if let Some(addr) = dial_addr {
         // Listen on random port first
-        cmd_sender.send(NetworkCommand::Listen("/ip4/0.0.0.0/tcp/0".parse().unwrap())).await.unwrap();
+        cmd_sender
+            .send(NetworkCommand::Listen(
+                "/ip4/0.0.0.0/tcp/0".parse().unwrap(),
+            ))
+            .await
+            .unwrap();
         cmd_sender.send(NetworkCommand::Dial(addr)).await.unwrap();
     }
 
@@ -69,7 +83,6 @@ async fn run_app(
     event_receiver: &mut mpsc::Receiver<NetworkEvent>,
     mut cmd_sender: mpsc::Sender<NetworkCommand>,
 ) -> io::Result<()> {
-    // 10 FPS for now
     let tick_rate = Duration::from_millis(100);
     let mut last_tick = Instant::now();
     let mut needs_render = true;

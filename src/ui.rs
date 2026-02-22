@@ -100,6 +100,36 @@ impl<'a> Widget for GlobeWidget<'a> {
                     .set_fg(color);
             }
         }
+
+        // Render Peer Markers
+        let r = (inner.height as f64 / 2.0) - 1.0;
+        let cx = inner.width as f64 / 2.0;
+        let cy = inner.height as f64 / 2.0;
+
+        for (_, (lat, lon, _)) in &self.app.peer_locations {
+            let lat_rad = lat.to_radians();
+            let lon_rad = lon.to_radians();
+
+            // The texture is mapped such that longitude 0 is the center.
+            //  revolve the sphere by subtracting rotation_y.
+            let current_lon = lon_rad - self.app.rotation_y;
+
+            let x = lat_rad.cos() * current_lon.sin();
+            let y = -lat_rad.sin(); // Maps to screen Y downwards
+            let z = lat_rad.cos() * current_lon.cos();
+
+            // If the point is on the hemisphere facing the camera
+            if z > 0.0 {
+                let screen_x = (cx + (x * r / 0.45)).round() as u16;
+                let screen_y = (cy + y * r).round() as u16;
+
+                if screen_x < inner.width && screen_y < inner.height {
+                    if let Some(cell) = buf.cell_mut((inner.x + screen_x, inner.y + screen_y)) {
+                        cell.set_char('🎯').set_fg(Color::Cyan);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -131,20 +161,36 @@ pub fn render(f: &mut Frame, app: &mut App) {
         app.listen_addrs
     )));
     net_info.push(ratatui::text::Line::from(format!(
-        "Peers ({}): {:?}",
-        app.peers.len(),
-        app.peers
+        "Peers ({}):",
+        app.peers.len()
     )));
+    for peer in &app.peers {
+        let full_id = peer.to_string();
+        let short_id = if full_id.len() > 8 {
+            &full_id[full_id.len() - 8..]
+        } else {
+            &full_id
+        };
+        if let Some((_, _, loc)) = app.peer_locations.get(peer) {
+            net_info.push(ratatui::text::Line::from(format!(
+                "  - {} ({})",
+                short_id, loc
+            )));
+        } else {
+            net_info.push(ratatui::text::Line::from(format!("  - {}", short_id)));
+        }
+    }
 
     let info_widget = ratatui::widgets::Paragraph::new(net_info)
         .block(Block::default().borders(Borders::ALL).title("Network Info"))
         .style(Style::default().fg(Color::Cyan));
 
+    let info_height = (4 + app.peers.len() as u16).max(6);
     let info_area = ratatui::layout::Rect {
         x: f.area().x,
-        y: f.area().bottom().saturating_sub(6),
+        y: f.area().bottom().saturating_sub(info_height),
         width: 100.min(f.area().width),
-        height: 6,
+        height: info_height,
     };
     f.render_widget(info_widget, info_area);
 

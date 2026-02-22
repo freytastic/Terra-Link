@@ -8,7 +8,9 @@ crossterm = "0.29.0"
 futures = "0.3.32"
 libp2p = { version = "0.56.0", features = ["tokio", "quic", "kad", "macros", "identify", "tcp", "noise", "yamux", "gossipsub"] }
 libp2p-gossipsub = "0.49.2"
+maxminddb = "0.27.3"
 prost = "0.14.3"
+rand = "0.8"
 ratatui = "0.30.0"
 tokio = { version = "1.49.0", features = ["full"] }
 

@@ -28,7 +28,7 @@ pub enum NetworkCommand {
 #[derive(Debug)]
 pub enum NetworkEvent {
     Listening(Multiaddr),
-    PeerConnected(PeerId),
+    PeerConnected(PeerId, std::net::IpAddr),
     PeerDisconnected(PeerId),
     MessageReceived { sender: PeerId, text: String },
 }
@@ -98,8 +98,18 @@ pub async fn start_network(
                     SwarmEvent::NewListenAddr { address, .. } => {
                         let _ = event_sender.send(NetworkEvent::Listening(address)).await;
                     }
-                    SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-                        let _ = event_sender.send(NetworkEvent::PeerConnected(peer_id)).await;
+                    SwarmEvent::ConnectionEstablished { peer_id, endpoint, .. } => {
+                        let mut ip = None;
+                        for protocol in endpoint.get_remote_address().iter() {
+                            match protocol {
+                                libp2p::multiaddr::Protocol::Ip4(ipv4) => ip = Some(std::net::IpAddr::V4(ipv4)),
+                                libp2p::multiaddr::Protocol::Ip6(ipv6) => ip = Some(std::net::IpAddr::V6(ipv6)),
+                                _ => {}
+                            }
+                        }
+                        if let Some(ip) = ip {
+                            let _ = event_sender.send(NetworkEvent::PeerConnected(peer_id, ip)).await;
+                        }
                     }
                     SwarmEvent::ConnectionClosed { peer_id, .. } => {
                         let _ = event_sender.send(NetworkEvent::PeerDisconnected(peer_id)).await;

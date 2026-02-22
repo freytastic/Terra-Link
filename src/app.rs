@@ -1,16 +1,32 @@
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use std::io;
-use std::time::Duration;
+
+pub struct CachedPoint {
+    pub screen_x: u16,
+    pub screen_y: u16,
+    pub original_u: f64,
+    pub map_y: usize,
+    pub intensity: f64,
+}
 
 #[derive(Default)]
 pub struct App {
     pub should_quit: bool,
     pub rotation_y: f64,
+    pub last_width: u16,
+    pub last_height: u16,
+    pub projection_cache: Vec<CachedPoint>,
 }
 
 impl App {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            should_quit: false,
+            rotation_y: 0.0,
+            last_width: 0,
+            last_height: 0,
+            projection_cache: Vec::new(),
+        }
     }
 
     pub fn tick(&mut self) {
@@ -19,12 +35,9 @@ impl App {
     }
 
     pub fn handle_events(&mut self) -> io::Result<()> {
-        let timeout = Duration::from_millis(16); // ~60 FPS
-        if event::poll(timeout)? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    self.handle_key(key);
-                }
+        if let Event::Key(key) = event::read()? {
+            if key.kind == KeyEventKind::Press {
+                self.handle_key(key);
             }
         }
         Ok(())

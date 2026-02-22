@@ -45,6 +45,8 @@ async fn main() -> io::Result<()> {
         return Ok(());
     }
 
+    ensure_geolite_db().await?;
+
     let mut terminal = tui::init()?;
     let mut app = App::new();
 
@@ -118,6 +120,28 @@ async fn run_app(
             last_tick = Instant::now();
             needs_render = true; // Globe rotated, we must render
         }
+    }
+    Ok(())
+}
+
+async fn ensure_geolite_db() -> io::Result<()> {
+    let db_path = "GeoLite2-City.mmdb";
+    if !std::path::Path::new(db_path).exists() {
+        println!("GeoLite2-City database not found. Downloading (60MB+)...");
+        let url = "https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb";
+
+        let mut response = reqwest::get(url)
+            .await
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Download failed: {}", e)))?;
+
+        let mut file = std::fs::File::create(db_path)?;
+        while let Some(chunk) = response.chunk().await.map_err(|e| {
+            io::Error::new(io::ErrorKind::Other, format!("Failed to read chunk: {}", e))
+        })? {
+            use std::io::Write;
+            file.write_all(&chunk)?;
+        }
+        println!("Download complete!");
     }
     Ok(())
 }

@@ -16,6 +16,9 @@ pub struct AppBehaviour {
     pub gossipsub: gossipsub::Behaviour,
     pub identify: identify::Behaviour,
     pub kademlia: kad::Behaviour<kad::store::MemoryStore>,
+    pub relay_client: libp2p::relay::client::Behaviour,
+    pub dcutr: libp2p::dcutr::Behaviour,
+    pub autonat: libp2p::autonat::Behaviour,
 }
 
 #[derive(Debug)]
@@ -49,7 +52,8 @@ pub async fn start_network(
             yamux::Config::default,
         )?
         .with_quic()
-        .with_behaviour(|key| {
+        .with_relay_client(noise::Config::new, yamux::Config::default)?
+        .with_behaviour(|key, relay_client| {
             // Setup Gossipsub config
             let message_id_fn = |message: &gossipsub::Message| {
                 let mut s = DefaultHasher::new();
@@ -79,10 +83,16 @@ pub async fn start_network(
             let store = kad::store::MemoryStore::new(local_peer_id);
             let kademlia = kad::Behaviour::with_config(local_peer_id, store, kad_config);
 
+            let dcutr = libp2p::dcutr::Behaviour::new(local_peer_id);
+            let autonat = libp2p::autonat::Behaviour::new(local_peer_id, Default::default());
+
             Ok(AppBehaviour {
                 gossipsub,
                 identify,
                 kademlia,
+                relay_client,
+                dcutr,
+                autonat,
             })
         })?
         .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))

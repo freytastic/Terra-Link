@@ -1,53 +1,82 @@
 use ratatui::style::Color;
-use std::f64::consts::PI;
 
-pub struct GlobePoint {
-    pub x: f64,
-    pub y: f64,
-    pub color: Color,
-}
+pub const EARTH_MAP_WIDTH: usize = 64;
+pub const EARTH_MAP_HEIGHT: usize = 32;
 
-/// Computes the 3D points of the globe rotated and projected onto 2D.
-/// Uses orthographic projection, returning points that are visible (z >= 0).
-pub fn project_globe(rotation_y: f64, sun_vector: (f64, f64, f64)) -> Vec<GlobePoint> {
-    let mut points = Vec::new();
-    let num_lat = 40;
-    let num_lon = 80;
+pub const EARTH_MAP: [&str; EARTH_MAP_HEIGHT] = [
+    "                                                                ",
+    "                                                                ",
+    "        #############                                           ",
+    "       #################                                        ",
+    "     ######################          ##############             ",
+    "    #########################      ##################           ",
+    "   ###########################    #####################         ",
+    "  #############################  ########################       ",
+    "  #############################  ########################       ",
+    "   ###########################    #######################       ",
+    "    ####  ###################     #######################       ",
+    "    ###    #################      ########################      ",
+    "            ###############       ########################      ",
+    "              ############        #######################       ",
+    "              ###########         #######################       ",
+    "               #########          #######################       ",
+    "               ########            #####################        ",
+    "               #######             ###################          ",
+    "                ######             ###################          ",
+    "                #####               ##################          ",
+    "                 ####               #################           ",
+    "                                     ###############            ",
+    "                                     ##############             ",
+    "                                      ############              ",
+    "                                        ########                ",
+    "                                         #####                  ",
+    "                                          ###                   ",
+    "                                           #             ####   ",
+    "                                                        ######  ",
+    "                                                         ####   ",
+    "                                                                ",
+    "                                                                ",
+];
 
-    for lat_idx in 0..num_lat {
-        let lat = -PI / 2.0 + (PI * lat_idx as f64) / (num_lat as f64 - 1.0);
-        let cos_lat = lat.cos();
-        let sin_lat = lat.sin();
+pub fn get_appearance(is_land: bool, intensity: f64) -> (char, Color) {
+    if intensity > 0.0 {
+        // Day side (Lambertian reflection)
+        // Ambient light + diffuse light
+        let i = 0.2 + (intensity * 0.8);
 
-        for lon_idx in 0..num_lon {
-            let lon = -PI + (2.0 * PI * lon_idx as f64) / (num_lon as f64);
-
-            // Base sphere coordinates (radius = 1)
-            let x0 = cos_lat * lon.cos();
-            let y0 = sin_lat;
-            let z0 = cos_lat * lon.sin();
-
-            // Rotate around Y-axis
-            let x = x0 * rotation_y.cos() - z0 * rotation_y.sin();
-            let y = y0;
-            let z = x0 * rotation_y.sin() + z0 * rotation_y.cos();
-
-            // Only forward-facing points (Orthographic projection)
-            if z >= 0.0 {
-                // Calculate dot product with sun vector for day/night shading
-                // sun_vector is assumed normalized.
-                let dot = x * sun_vector.0 + y * sun_vector.1 + z * sun_vector.2;
-
-                let color = if dot > 0.0 {
-                    Color::Green // Day side
-                } else {
-                    Color::DarkGray // Night side
-                };
-
-                points.push(GlobePoint { x, y, color });
+        let char = if is_land {
+            '⣿' // land
+        } else {
+            // Waves on the water depending on intensity
+            if i > 0.8 {
+                '~'
+            } else if i > 0.5 {
+                '-'
+            } else {
+                '.'
             }
-        }
-    }
+        };
 
-    points
+        let color = if is_land {
+            // green
+            Color::Rgb(0, (255.0 * i) as u8, (50.0 * i) as u8)
+        } else {
+            // mlue
+            Color::Rgb(0, (100.0 * i) as u8, (255.0 * i) as u8)
+        };
+        (char, color)
+    } else {
+        // Dim
+        let n_i = (-intensity).clamp(0.0, 1.0);
+
+        let char = if is_land { '⣿' } else { ' ' };
+        let color = if is_land {
+            // Fading out city lights or just faint land silhouette
+            let dim = (40.0 * (1.0 - n_i)).max(15.0) as u8;
+            Color::Rgb(0, dim, 0)
+        } else {
+            Color::Reset
+        };
+        (char, color)
+    }
 }

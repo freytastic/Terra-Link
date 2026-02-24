@@ -1,10 +1,10 @@
 use ratatui::{
-    Frame,
     buffer::Buffer,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap},
+    Frame,
 };
 
 use crate::app::App;

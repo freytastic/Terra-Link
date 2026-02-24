@@ -112,11 +112,20 @@ impl App {
                     let msg = self.input_buffer.clone();
                     self.input_buffer.clear();
                     if !msg.is_empty() {
-                        let _ = cmd_sender
-                            .try_send(crate::network::NetworkCommand::PublishMessage(msg.clone()));
-                        // Display name: nickname if set, otherwise truncated PeerID
                         let me = self.display_name();
-                        self.chat_messages.push((me, msg));
+                        if let Err(e) =
+                            cmd_sender.try_send(crate::network::NetworkCommand::PublishMessage {
+                                sender_id: me.clone(),
+                                text: msg.clone(),
+                            })
+                        {
+                            self.chat_messages.push((
+                                "SYSTEM".to_string(),
+                                format!("Error sending message: {}", e),
+                            ));
+                        } else {
+                            self.chat_messages.push((me, msg));
+                        }
                     }
                     self.input_mode = false;
                 }
@@ -176,10 +185,16 @@ impl App {
                 self.peers.retain(|p| p != &peer_id);
                 self.peer_locations.remove(&peer_id);
             }
-            NetworkEvent::MessageReceived { sender, text } => {
-                self.chat_messages.push((sender.to_string(), text));
+            NetworkEvent::MessageReceived { sender_id, text } => {
+                self.chat_messages.push((sender_id, text));
                 if self.chat_messages.len() > 100 {
                     self.chat_messages.remove(0); // keep it bounded
+                }
+            }
+            NetworkEvent::Error(msg) => {
+                self.chat_messages.push(("SYSTEM".to_string(), msg));
+                if self.chat_messages.len() > 100 {
+                    self.chat_messages.remove(0);
                 }
             }
         }

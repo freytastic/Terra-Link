@@ -1,8 +1,8 @@
 use futures::StreamExt;
 use libp2p::{
-    Multiaddr, PeerId, StreamProtocol, SwarmBuilder, gossipsub, identify, identity, kad, noise,
+    gossipsub, identify, identity, kad, noise,
     swarm::{NetworkBehaviour, SwarmEvent},
-    tcp, yamux,
+    tcp, yamux, Multiaddr, PeerId, StreamProtocol, SwarmBuilder,
 };
 use std::collections::hash_map::DefaultHasher;
 use std::error::Error;
@@ -25,7 +25,7 @@ pub struct AppBehaviour {
 pub enum NetworkCommand {
     Listen(Multiaddr),
     Dial(Multiaddr),
-    PublishMessage(String),
+    PublishMessage { sender_id: String, text: String },
 }
 
 #[derive(Debug)]
@@ -33,7 +33,8 @@ pub enum NetworkEvent {
     Listening(Multiaddr),
     PeerConnected(PeerId, std::net::IpAddr),
     PeerDisconnected(PeerId),
-    MessageReceived { sender: PeerId, text: String },
+    MessageReceived { sender_id: String, text: String },
+    Error(String),
 }
 
 pub async fn start_network(
@@ -125,14 +126,15 @@ pub async fn start_network(
                         let _ = event_sender.send(NetworkEvent::PeerDisconnected(peer_id)).await;
                     }
                     SwarmEvent::Behaviour(AppBehaviourEvent::Gossipsub(gossipsub::Event::Message {
-                        propagation_source: peer_id,
+                        propagation_source: _peer_id,
                         message_id: _id,
                         message,
                     })) => {
-                        if let Ok(text) = String::from_utf8(message.data) {
+                        use prost::Message;
+                        if let Ok(global_chat) = crate::proto::messages::GlobalChat::decode(message.data.as_slice()) {
                             let _ = event_sender.send(NetworkEvent::MessageReceived {
-                                sender: peer_id,
-                                text,
+                                sender_id: global_chat.sender_id,
+                                text: global_chat.text,
                             }).await;
                         }
                     }
@@ -142,14 +144,35 @@ pub async fn start_network(
                     if let Some(command) = cmd {
                         match command {
                             NetworkCommand::Listen(addr) => {
-                                let _ = swarm.listen_on(addr);
+                                if let Err(e) = swarm.listen_on(addr.clone()) {
+                                    let _ = event_sender.send(NetworkEvent::Error(format!("Listen error on {}: {}", addr, e))).await;
+                                }
                             }
                             NetworkCommand::Dial(addr) => {
-                                let _ = swarm.dial(addr);
+                                if let Err(e) = swarm.dial(addr.clone()) {
+                                    let _ = event_sender.send(NetworkEvent::Error(format!("Dial error for {}: {}", addr, e))).await;
+                                }
                             }
-                            NetworkCommand::PublishMessage(text) => {
+                            NetworkCommand::PublishMessage { sender_id, text } => {
+                                use prost::Message;
+                                use std::time::{SystemTime, UNIX_EPOCH};
                                 let topic = gossipsub::IdentTopic::new("/world");
-                                if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic, text.into_bytes()) {
+
+                                let timestamp = SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_millis() as u64;
+
+                                let msg = crate::proto::messages::GlobalChat {
+                                    sender_id,
+                                    text,
+                                    timestamp,
+                                };
+
+                                let mut buf = Vec::new();
+                                msg.encode(&mut buf).unwrap();
+
+                                if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic, buf) {
                                     eprintln!("Publish error: {:?}", e);
                                 }
                             }

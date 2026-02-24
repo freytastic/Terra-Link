@@ -81,6 +81,8 @@ async fn main() -> io::Result<()> {
             .expect("Failed to send dial command: network thread died");
     }
 
+    let mut relay_info = None;
+
     // If RELAY_NODE is defined in .env, automatically dial it!
     if let Ok(relay_str) = std::env::var("RELAY_NODE") {
         if let Ok(relay_addr) = relay_str.parse::<libp2p::Multiaddr>() {
@@ -94,20 +96,31 @@ async fn main() -> io::Result<()> {
                     .expect("Failed to initialize random listen port for relay");
             }
 
+            let mut extracted_peer_id = None;
+            for protocol in relay_addr.iter() {
+                if let libp2p::multiaddr::Protocol::P2p(peer_id) = protocol {
+                    extracted_peer_id = Some(peer_id);
+                }
+            }
+            if let Some(peer_id) = extracted_peer_id {
+                relay_info = Some((peer_id, relay_addr.clone()));
+            }
+
             cmd_sender
                 .send(NetworkCommand::Dial(relay_addr.clone()))
                 .await
                 .expect("Failed to dial relay node");
-
-            // This is what reserves the circuit slot for DCUtR hole punching!
-            cmd_sender
-                .send(NetworkCommand::ListenOnRelay(relay_addr))
-                .await
-                .expect("Failed to reserve relay circuit");
         }
     }
 
-    let res = run_app(&mut terminal, &mut app, &mut event_receiver, cmd_sender).await;
+    let res = run_app(
+        &mut terminal,
+        &mut app,
+        &mut event_receiver,
+        cmd_sender,
+        relay_info,
+    )
+    .await;
 
     tui::restore()?;
     res
@@ -118,10 +131,12 @@ async fn run_app(
     app: &mut App,
     event_receiver: &mut mpsc::Receiver<NetworkEvent>,
     mut cmd_sender: mpsc::Sender<NetworkCommand>,
+    relay_info: Option<(libp2p::PeerId, libp2p::Multiaddr)>,
 ) -> io::Result<()> {
     let tick_rate = Duration::from_millis(100);
     let mut last_tick = Instant::now();
     let mut needs_render = true;
+    let mut relay_reserved = false;
 
     while !app.should_quit {
         if needs_render {
@@ -140,6 +155,32 @@ async fn run_app(
 
         // Process network events non-blocking
         while let Ok(event) = event_receiver.try_recv() {
+            match &event {
+                NetworkEvent::PeerConnected(peer, ip) => {
+                    println!("[CONNECTED] Peer: {} | IP: {}", peer, ip);
+                    if !relay_reserved {
+                        if let Some((relay_peer_id, ref relay_addr)) = relay_info {
+                            if *peer == relay_peer_id {
+                                println!("[RELAY] Reserving circuit on relay...");
+                                let _ = cmd_sender
+                                    .try_send(NetworkCommand::ListenOnRelay(relay_addr.clone()));
+                                relay_reserved = true;
+                            }
+                        }
+                    }
+                }
+                NetworkEvent::PeerDisconnected(peer) => {
+                    println!("[DISCONNECTED] Peer: {}", peer);
+                }
+                NetworkEvent::Listening(addr) => {
+                    println!("[LISTENING] {}", addr);
+                }
+                NetworkEvent::Error(msg) => {
+                    eprintln!("[ERROR] {}", msg);
+                }
+                _ => {}
+            }
+
             app.handle_network_event(event);
             needs_render = true;
         }

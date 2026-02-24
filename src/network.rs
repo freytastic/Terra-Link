@@ -143,7 +143,12 @@ pub async fn start_network(
                             }).await;
                         }
                     }
-                    _ => {}
+                    other => {
+                        use std::io::Write;
+                        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("debug.log") {
+                            let _ = writeln!(f, "Unhandled event: {:?}", other);
+                        }
+                    }
                 },
                 cmd = cmd_receiver.recv() => {
                     if let Some(command) = cmd {

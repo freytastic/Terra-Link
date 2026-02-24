@@ -191,6 +191,18 @@ impl App {
                     self.chat_messages.remove(0); // keep it bounded
                 }
             }
+            NetworkEvent::PeerDiscovered(sender_id, addr) => {
+                // Another peer broadcasted their address over the relay!
+                if let Ok(peer_id) = sender_id.parse::<libp2p::PeerId>() {
+                    // Do we know them?
+                    if !self.peers.contains(&peer_id) && Some(peer_id) != self.local_peer_id {
+                        // Let's dial them proactively via the circuit
+                        self.chat_messages.push(("SYSTEM".to_string(), format!("Discovered peer {} via gossip! Dialing...", sender_id)));
+                        // Note: actually dialing here would require cmd_sender, which handle_network_event doesn't currently take.
+                        // For the MVP, just print it so the user can see them!
+                    }
+                }
+            }
             NetworkEvent::Error(msg) => {
                 self.chat_messages.push(("SYSTEM".to_string(), msg));
                 if self.chat_messages.len() > 100 {

@@ -171,13 +171,21 @@ async fn run_app(
                 NetworkEvent::Listening(addr) => {
                     println!("[LISTENING] {}", addr);
                 }
-                NetworkEvent::PeerDiscovered(peer, addr) => {
+                NetworkEvent::PeerDiscovered(peer, addrs) => {
                     // Try to autodial the discovered peer if we aren't connected!
                     if let Ok(peer_id) = peer.parse::<libp2p::PeerId>() {
-                        if !app.peers.contains(&peer_id) && Some(peer_id) != app.local_peer_id {
-                            let _ = cmd_sender.try_send(NetworkCommand::Dial(addr.clone()));
+                        if !app.peers.contains(&peer_id)
+                            && Some(peer_id) != app.local_peer_id
+                            && !app.dialing_peers.contains(&peer_id)
+                        {
+                            let _ = cmd_sender
+                                .try_send(NetworkCommand::DialPeer(peer_id, addrs.clone()));
+                            // App handles inserting into dialing_peers in handle_network_event!
                         }
                     }
+                }
+                NetworkEvent::DialError(peer_id) => {
+                    println!("[DIAL ERROR] Failed to dial peer: {}", peer_id);
                 }
                 NetworkEvent::Error(msg) => {
                     eprintln!("[ERROR] {}", msg);

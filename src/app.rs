@@ -33,6 +33,8 @@ pub struct App {
 
     pub nickname: Option<String>,
     pub nickname_buffer: String,
+
+    pub dialing_peers: std::collections::HashSet<libp2p::PeerId>,
 }
 
 impl App {
@@ -55,6 +57,7 @@ impl App {
             boot_complete: false,
             nickname: None,
             nickname_buffer: String::new(),
+            dialing_peers: std::collections::HashSet::new(),
         }
     }
 
@@ -180,10 +183,13 @@ impl App {
                         self.peer_locations.insert(peer_id, loc);
                     }
                 }
+                // They are connected, so remove from dialing state if present
+                self.dialing_peers.remove(&peer_id);
             }
             NetworkEvent::PeerDisconnected(peer_id) => {
                 self.peers.retain(|p| p != &peer_id);
                 self.peer_locations.remove(&peer_id);
+                self.dialing_peers.remove(&peer_id);
             }
             NetworkEvent::MessageReceived { sender_id, text } => {
                 self.chat_messages.push((sender_id, text));
@@ -191,17 +197,23 @@ impl App {
                     self.chat_messages.remove(0); // keep it bounded
                 }
             }
-            NetworkEvent::PeerDiscovered(sender_id, addr) => {
+            NetworkEvent::PeerDiscovered(sender_id, _addrs) => {
                 // Another peer broadcasted their address over the relay!
                 if let Ok(peer_id) = sender_id.parse::<libp2p::PeerId>() {
                     // Do we know them?
                     if !self.peers.contains(&peer_id) && Some(peer_id) != self.local_peer_id {
-                        // Let's dial them proactively via the circuit
-                        self.chat_messages.push(("SYSTEM".to_string(), format!("Discovered peer {} via gossip! Dialing...", sender_id)));
-                        // Note: actually dialing here would require cmd_sender, which handle_network_event doesn't currently take.
-                        // For the MVP, just print it so the user can see them!
+                        if !self.dialing_peers.contains(&peer_id) {
+                            self.dialing_peers.insert(peer_id);
+                            self.chat_messages.push((
+                                "SYSTEM".to_string(),
+                                format!("Discovered peer {} via gossip! Dialing...", sender_id),
+                            ));
+                        }
                     }
                 }
+            }
+            NetworkEvent::DialError(peer_id) => {
+                self.dialing_peers.remove(&peer_id);
             }
             NetworkEvent::Error(msg) => {
                 self.chat_messages.push(("SYSTEM".to_string(), msg));

@@ -45,6 +45,8 @@ async fn main() -> io::Result<()> {
         return Ok(());
     }
 
+    let _ = dotenvy::dotenv();
+
     ensure_geolite_db().await?;
 
     let mut terminal = tui::init()?;
@@ -59,13 +61,13 @@ async fn main() -> io::Result<()> {
 
     app.local_peer_id = Some(local_peer_id);
 
-    if let Some(addr) = listen_addr {
+    if let Some(ref addr) = listen_addr {
         cmd_sender
-            .send(NetworkCommand::Listen(addr))
+            .send(NetworkCommand::Listen(addr.clone()))
             .await
             .expect("Failed to send listen command: network thread died");
     }
-    if let Some(addr) = dial_addr {
+    if let Some(ref addr) = dial_addr {
         // Listen on random port first
         cmd_sender
             .send(NetworkCommand::Listen(
@@ -74,9 +76,29 @@ async fn main() -> io::Result<()> {
             .await
             .expect("Failed to initialize random listen port");
         cmd_sender
-            .send(NetworkCommand::Dial(addr))
+            .send(NetworkCommand::Dial(addr.clone()))
             .await
             .expect("Failed to send dial command: network thread died");
+    }
+
+    // If RELAY_NODE is defined in .env, automatically dial it!
+    if let Ok(relay_str) = std::env::var("RELAY_NODE") {
+        if let Ok(relay_addr) = relay_str.parse::<libp2p::Multiaddr>() {
+            // Need a listen port open to perform NAT hole punching
+            if listen_addr.is_none() && dial_addr.is_none() {
+                cmd_sender
+                    .send(NetworkCommand::Listen(
+                        "/ip4/0.0.0.0/tcp/0".parse().unwrap(),
+                    ))
+                    .await
+                    .expect("Failed to initialize random listen port for relay");
+            }
+
+            cmd_sender
+                .send(NetworkCommand::Dial(relay_addr))
+                .await
+                .expect("Failed to dial relay node");
+        }
     }
 
     let res = run_app(&mut terminal, &mut app, &mut event_receiver, cmd_sender).await;

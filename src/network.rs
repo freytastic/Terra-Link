@@ -26,6 +26,7 @@ pub struct AppBehaviour {
 pub enum NetworkCommand {
     Listen(Multiaddr),
     Dial(Multiaddr),
+    DialPeer(PeerId, Vec<Multiaddr>),
     ListenOnRelay(Multiaddr),
     PublishMessage {
         sender_id: String,
@@ -43,7 +44,8 @@ pub enum NetworkEvent {
     PeerConnected(PeerId, std::net::IpAddr),
     PeerDisconnected(PeerId),
     MessageReceived { sender_id: String, text: String },
-    PeerDiscovered(String, Multiaddr),
+    PeerDiscovered(String, Vec<Multiaddr>),
+    DialError(PeerId),
     Error(String),
 }
 
@@ -154,18 +156,23 @@ pub async fn start_network(
                                         }).await;
                                     }
                                     crate::proto::messages::network_message::MessageType::Presence(presence) => {
+                                        let mut addrs = Vec::new();
                                         for addr_str in presence.listen_addrs {
                                             if let Ok(addr) = addr_str.parse::<Multiaddr>() {
-                                                // lets just emit it as a NetworkEvent for the UI
-                                                // We can reuse Listening or create a new event
-                                                let _ = event_sender.send(NetworkEvent::PeerDiscovered(presence.sender_id.clone(), addr)).await;
+                                                addrs.push(addr);
                                             }
+                                        }
+                                        if !addrs.is_empty() {
+                                            let _ = event_sender.send(NetworkEvent::PeerDiscovered(presence.sender_id, addrs)).await;
                                         }
                                     }
                                     _ => {} // DirectMessage or other uncaught variants
                                 }
                             }
                         }
+                    }
+                    SwarmEvent::OutgoingConnectionError { peer_id: Some(peer_id), .. } => {
+                        let _ = event_sender.send(NetworkEvent::DialError(peer_id)).await;
                     }
                     other => {
                         use std::io::Write;
@@ -185,6 +192,12 @@ pub async fn start_network(
                             NetworkCommand::Dial(addr) => {
                                 if let Err(e) = swarm.dial(addr.clone()) {
                                     let _ = event_sender.send(NetworkEvent::Error(format!("Dial error for {}: {}", addr, e))).await;
+                                }
+                            }
+                            NetworkCommand::DialPeer(peer_id, addrs) => {
+                                let opts = libp2p::swarm::dial_opts::DialOpts::peer_id(peer_id).addresses(addrs).build();
+                                if let Err(e) = swarm.dial(opts) {
+                                    let _ = event_sender.send(NetworkEvent::Error(format!("Dial failure for peer {}: {}", peer_id, e))).await;
                                 }
                             }
                             NetworkCommand::ListenOnRelay(mut addr) => {

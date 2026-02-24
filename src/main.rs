@@ -95,9 +95,15 @@ async fn main() -> io::Result<()> {
             }
 
             cmd_sender
-                .send(NetworkCommand::Dial(relay_addr))
+                .send(NetworkCommand::Dial(relay_addr.clone()))
                 .await
                 .expect("Failed to dial relay node");
+
+            // This is what reserves the circuit slot for DCUtR hole punching!
+            cmd_sender
+                .send(NetworkCommand::ListenOnRelay(relay_addr))
+                .await
+                .expect("Failed to reserve relay circuit");
         }
     }
 

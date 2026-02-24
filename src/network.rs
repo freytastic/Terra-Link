@@ -101,7 +101,7 @@ pub async fn start_network(
                 ping,
             })
         })?
-        .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60 * 60)))
+        .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
         .build();
 
     let topic = gossipsub::IdentTopic::new("/world");

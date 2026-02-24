@@ -60,7 +60,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 identify,
             }
         })?
-        .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
+        // Note: Ping determines if the connection is dead. We do not want an arbitrary idle timeout closing active relayed tunnels.
+        .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60 * 60)))
         .build();
 
     // Listen on all interfaces on port 4001
@@ -86,15 +87,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 println!("Listening on {:?}", address);
             }
             SwarmEvent::Behaviour(RelayBehaviourEvent::Relay(event)) => {
-                println!("Relay event: {:?}", event);
+                println!("Relay circuit event: {:?}", event);
+            }
+            SwarmEvent::Behaviour(RelayBehaviourEvent::Ping(event)) => {
+                // Commenting out to avoid log spam, but ping keeps the connection alive
+                // println!("Ping event: {:?}", event);
             }
             SwarmEvent::ConnectionEstablished { peer_id, .. } => {
                 println!("Connected to {}", peer_id);
             }
-            SwarmEvent::ConnectionClosed { peer_id, .. } => {
-                println!("Disconnected from {}", peer_id);
+            SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
+                println!("Disconnected from {} (cause: {:?})", peer_id, cause);
             }
-            _ => {}
+            SwarmEvent::IncomingConnectionError { error, .. } => {
+                println!("Incoming connection error: {:?}", error);
+            }
+            SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+                println!("Outgoing connection error to {:?}: {:?}", peer_id, error);
+            }
+            event => {
+                // Print all other untracked events for deep debugging
+                println!("Unhandled SwarmEvent: {:?}", event);
+            }
         }
     }
 }

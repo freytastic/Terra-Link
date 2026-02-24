@@ -60,7 +60,10 @@ async fn main() -> io::Result<()> {
     app.local_peer_id = Some(local_peer_id);
 
     if let Some(addr) = listen_addr {
-        cmd_sender.send(NetworkCommand::Listen(addr)).await.unwrap();
+        cmd_sender
+            .send(NetworkCommand::Listen(addr))
+            .await
+            .expect("Failed to send listen command: network thread died");
     }
     if let Some(addr) = dial_addr {
         // Listen on random port first
@@ -69,8 +72,11 @@ async fn main() -> io::Result<()> {
                 "/ip4/0.0.0.0/tcp/0".parse().unwrap(),
             ))
             .await
-            .unwrap();
-        cmd_sender.send(NetworkCommand::Dial(addr)).await.unwrap();
+            .expect("Failed to initialize random listen port");
+        cmd_sender
+            .send(NetworkCommand::Dial(addr))
+            .await
+            .expect("Failed to send dial command: network thread died");
     }
 
     let res = run_app(&mut terminal, &mut app, &mut event_receiver, cmd_sender).await;

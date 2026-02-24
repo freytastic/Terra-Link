@@ -1,5 +1,5 @@
-use maxminddb::Reader;
 use maxminddb::geoip2::City;
+use maxminddb::Reader;
 use rand::Rng;
 use std::net::IpAddr;
 

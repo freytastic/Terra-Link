@@ -14,3 +14,9 @@ message DirectMessage {
     string text = 3;
     uint64 timestamp = 4;
 }
+
+message Presence {
+    string sender_id = 1;
+    repeated string listen_addrs = 2;
+    uint64 timestamp = 3;
+}

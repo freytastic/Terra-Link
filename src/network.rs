@@ -27,7 +27,14 @@ pub enum NetworkCommand {
     Listen(Multiaddr),
     Dial(Multiaddr),
     ListenOnRelay(Multiaddr),
-    PublishMessage { sender_id: String, text: String },
+    PublishMessage {
+        sender_id: String,
+        text: String,
+    },
+    BroadcastPresence {
+        sender_id: String,
+        listen_addrs: Vec<String>,
+    },
 }
 
 #[derive(Debug)]
@@ -36,6 +43,7 @@ pub enum NetworkEvent {
     PeerConnected(PeerId, std::net::IpAddr),
     PeerDisconnected(PeerId),
     MessageReceived { sender_id: String, text: String },
+    PeerDiscovered(String, Multiaddr),
     Error(String),
 }
 
@@ -101,7 +109,7 @@ pub async fn start_network(
                 ping,
             })
         })?
-        .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
+        .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60 * 60)))
         .build();
 
     let topic = gossipsub::IdentTopic::new("/world");
@@ -141,6 +149,14 @@ pub async fn start_network(
                                 sender_id: global_chat.sender_id,
                                 text: global_chat.text,
                             }).await;
+                        } else if let Ok(presence) = crate::proto::messages::Presence::decode(message.data.as_slice()) {
+                            for addr_str in presence.listen_addrs {
+                                if let Ok(addr) = addr_str.parse::<Multiaddr>() {
+                                    // lets just emit it as a NetworkEvent for the UI
+                                    // We can reuse Listening or create a new event
+                                    let _ = event_sender.send(NetworkEvent::PeerDiscovered(presence.sender_id.clone(), addr)).await;
+                                }
+                            }
                         }
                     }
                     other => {
@@ -191,6 +207,29 @@ pub async fn start_network(
 
                                 if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic, buf) {
                                     eprintln!("Publish error: {:?}", e);
+                                }
+                            }
+                            NetworkCommand::BroadcastPresence { sender_id, listen_addrs } => {
+                                use prost::Message;
+                                use std::time::{SystemTime, UNIX_EPOCH};
+                                let topic = gossipsub::IdentTopic::new("/world");
+
+                                let timestamp = SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_millis() as u64;
+
+                                let msg = crate::proto::messages::Presence {
+                                    sender_id,
+                                    listen_addrs,
+                                    timestamp,
+                                };
+
+                                let mut buf = Vec::new();
+                                msg.encode(&mut buf).unwrap();
+
+                                if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic, buf) {
+                                    eprintln!("Broadcast presence error: {:?}", e);
                                 }
                             }
                         }

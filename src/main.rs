@@ -127,6 +127,7 @@ async fn run_app(
 ) -> io::Result<()> {
     let tick_rate = Duration::from_millis(100);
     let mut last_tick = Instant::now();
+    let mut last_presence_broadcast = Instant::now();
     let mut needs_render = true;
 
     while !app.should_quit {
@@ -144,6 +145,20 @@ async fn run_app(
             std::thread::sleep(timeout - Duration::from_millis(10));
         }
 
+        // Periodically broadcast presence if we have local addresses
+        if last_presence_broadcast.elapsed() > Duration::from_secs(15) {
+            if let Some(me) = app.local_peer_id {
+                let addrs: Vec<String> = app.listen_addrs.iter().map(|a| a.to_string()).collect();
+                if !addrs.is_empty() {
+                    let _ = cmd_sender.try_send(NetworkCommand::BroadcastPresence {
+                        sender_id: me.to_string(),
+                        listen_addrs: addrs,
+                    });
+                }
+            }
+            last_presence_broadcast = Instant::now();
+        }
+
         // Process network events non-blocking
         while let Ok(event) = event_receiver.try_recv() {
             match &event {
@@ -155,6 +170,14 @@ async fn run_app(
                 }
                 NetworkEvent::Listening(addr) => {
                     println!("[LISTENING] {}", addr);
+                }
+                NetworkEvent::PeerDiscovered(peer, addr) => {
+                    // Try to autodial the discovered peer if we aren't connected!
+                    if let Ok(peer_id) = peer.parse::<libp2p::PeerId>() {
+                        if !app.peers.contains(&peer_id) && Some(peer_id) != app.local_peer_id {
+                            let _ = cmd_sender.try_send(NetworkCommand::Dial(addr.clone()));
+                        }
+                    }
                 }
                 NetworkEvent::Error(msg) => {
                     eprintln!("[ERROR] {}", msg);

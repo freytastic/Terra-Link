@@ -13,6 +13,7 @@ struct RelayBehaviour {
     relay: relay::Behaviour,
     ping: ping::Behaviour,
     identify: identify::Behaviour,
+    gossipsub: libp2p::gossipsub::Behaviour,
 }
 
 #[tokio::main]
@@ -28,7 +29,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     println!("Local Peer ID: {}", local_peer_id);
 
-    let mut swarm = SwarmBuilder::with_existing_identity(local_key)
+    let mut swarm = SwarmBuilder::with_existing_identity(local_key.clone())
         .with_tokio()
         .with_tcp(
             tcp::Config::default(),
@@ -54,10 +55,33 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 circuit_src_rate_limiters: vec![],
             };
 
+            // Setup Gossipsub config
+            let message_id_fn = |message: &libp2p::gossipsub::Message| {
+                use std::collections::hash_map::DefaultHasher;
+                use std::hash::{Hash, Hasher};
+                let mut s = DefaultHasher::new();
+                message.data.hash(&mut s);
+                libp2p::gossipsub::MessageId::from(s.finish().to_string())
+            };
+
+            let gossipsub_config = libp2p::gossipsub::ConfigBuilder::default()
+                .heartbeat_interval(Duration::from_secs(1))
+                .validation_mode(libp2p::gossipsub::ValidationMode::Strict)
+                .message_id_fn(message_id_fn)
+                .build()
+                .expect("Valid config");
+
+            let gossipsub = libp2p::gossipsub::Behaviour::new(
+                libp2p::gossipsub::MessageAuthenticity::Signed(local_key),
+                gossipsub_config,
+            )
+            .expect("Valid behaviour");
+
             RelayBehaviour {
                 relay: relay::Behaviour::new(local_peer_id, relay_config),
                 ping: ping::Behaviour::default(),
                 identify,
+                gossipsub,
             }
         })?
         // Note: Ping determines if the connection is dead. We do not want an arbitrary idle timeout closing active relayed tunnels.
@@ -71,6 +95,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Also listen on QUIC
     let quic_addr: Multiaddr = "/ip4/0.0.0.0/udp/4002/quic-v1".parse()?;
     swarm.listen_on(quic_addr)?;
+
+    let topic = libp2p::gossipsub::IdentTopic::new("/world");
+    swarm.behaviour_mut().gossipsub.subscribe(&topic)?;
 
     println!("Relay listening for UDP (QUIC) and TCP connections on port 4001...");
     println!(

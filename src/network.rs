@@ -25,6 +25,7 @@ pub struct AppBehaviour {
 pub enum NetworkCommand {
     Listen(Multiaddr),
     Dial(Multiaddr),
+    ListenOnRelay(Multiaddr),
     PublishMessage { sender_id: String, text: String },
 }
 
@@ -151,6 +152,13 @@ pub async fn start_network(
                             NetworkCommand::Dial(addr) => {
                                 if let Err(e) = swarm.dial(addr.clone()) {
                                     let _ = event_sender.send(NetworkEvent::Error(format!("Dial error for {}: {}", addr, e))).await;
+                                }
+                            }
+                            NetworkCommand::ListenOnRelay(mut addr) => {
+                                // To reserve the circuit
+                                addr.push(libp2p::multiaddr::Protocol::P2pCircuit);
+                                if let Err(e) = swarm.listen_on(addr.clone()) {
+                                    let _ = event_sender.send(NetworkEvent::Error(format!("Relay Reservation error for {}: {}", addr, e))).await;
                                 }
                             }
                             NetworkCommand::PublishMessage { sender_id, text } => {

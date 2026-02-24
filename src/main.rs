@@ -100,10 +100,16 @@ async fn main() -> io::Result<()> {
                 .await
                 .expect("Failed to dial relay node");
 
-            cmd_sender
-                .send(NetworkCommand::ListenOnRelay(relay_addr.clone()))
-                .await
-                .expect("Failed to listen on relay");
+            //  must wait for the Identify protocol to complete before reserving the circuit!
+            // If send ListenOnRelay immediately, libp2p may try to open the circuit stream
+            let cmd_sender_clone = cmd_sender.clone();
+            tokio::spawn(async move {
+                // Give the connection and Identify exchange 2 seconds to complete
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                let _ = cmd_sender_clone
+                    .send(NetworkCommand::ListenOnRelay(relay_addr))
+                    .await;
+            });
         }
     }
 

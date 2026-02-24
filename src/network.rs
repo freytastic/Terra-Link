@@ -19,6 +19,7 @@ pub struct AppBehaviour {
     pub relay_client: libp2p::relay::client::Behaviour,
     pub dcutr: libp2p::dcutr::Behaviour,
     pub autonat: libp2p::autonat::Behaviour,
+    pub ping: libp2p::ping::Behaviour,
 }
 
 #[derive(Debug)]
@@ -88,6 +89,8 @@ pub async fn start_network(
             let dcutr = libp2p::dcutr::Behaviour::new(local_peer_id);
             let autonat = libp2p::autonat::Behaviour::new(local_peer_id, Default::default());
 
+            let ping = libp2p::ping::Behaviour::default();
+
             Ok(AppBehaviour {
                 gossipsub,
                 identify,
@@ -95,9 +98,10 @@ pub async fn start_network(
                 relay_client,
                 dcutr,
                 autonat,
+                ping,
             })
         })?
-        .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
+        .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60 * 60)))
         .build();
 
     let topic = gossipsub::IdentTopic::new("/world");

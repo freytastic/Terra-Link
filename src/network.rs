@@ -144,17 +144,25 @@ pub async fn start_network(
                         message,
                     })) => {
                         use prost::Message;
-                        if let Ok(global_chat) = crate::proto::messages::GlobalChat::decode(message.data.as_slice()) {
-                            let _ = event_sender.send(NetworkEvent::MessageReceived {
-                                sender_id: global_chat.sender_id,
-                                text: global_chat.text,
-                            }).await;
-                        } else if let Ok(presence) = crate::proto::messages::Presence::decode(message.data.as_slice()) {
-                            for addr_str in presence.listen_addrs {
-                                if let Ok(addr) = addr_str.parse::<Multiaddr>() {
-                                    // lets just emit it as a NetworkEvent for the UI
-                                    // We can reuse Listening or create a new event
-                                    let _ = event_sender.send(NetworkEvent::PeerDiscovered(presence.sender_id.clone(), addr)).await;
+                        if let Ok(net_msg) = crate::proto::messages::NetworkMessage::decode(message.data.as_slice()) {
+                            if let Some(msg_type) = net_msg.message_type {
+                                match msg_type {
+                                    crate::proto::messages::network_message::MessageType::Chat(global_chat) => {
+                                        let _ = event_sender.send(NetworkEvent::MessageReceived {
+                                            sender_id: global_chat.sender_id,
+                                            text: global_chat.text,
+                                        }).await;
+                                    }
+                                    crate::proto::messages::network_message::MessageType::Presence(presence) => {
+                                        for addr_str in presence.listen_addrs {
+                                            if let Ok(addr) = addr_str.parse::<Multiaddr>() {
+                                                // lets just emit it as a NetworkEvent for the UI
+                                                // We can reuse Listening or create a new event
+                                                let _ = event_sender.send(NetworkEvent::PeerDiscovered(presence.sender_id.clone(), addr)).await;
+                                            }
+                                        }
+                                    }
+                                    _ => {} // DirectMessage or other uncaught variants
                                 }
                             }
                         }
@@ -196,10 +204,14 @@ pub async fn start_network(
                                     .unwrap_or_default()
                                     .as_millis() as u64;
 
-                                let msg = crate::proto::messages::GlobalChat {
+                                let chat = crate::proto::messages::GlobalChat {
                                     sender_id,
                                     text,
                                     timestamp,
+                                };
+
+                                let msg = crate::proto::messages::NetworkMessage {
+                                    message_type: Some(crate::proto::messages::network_message::MessageType::Chat(chat)),
                                 };
 
                                 let mut buf = Vec::new();
@@ -219,10 +231,14 @@ pub async fn start_network(
                                     .unwrap_or_default()
                                     .as_millis() as u64;
 
-                                let msg = crate::proto::messages::Presence {
+                                let presence = crate::proto::messages::Presence {
                                     sender_id,
                                     listen_addrs,
                                     timestamp,
+                                };
+
+                                let msg = crate::proto::messages::NetworkMessage {
+                                    message_type: Some(crate::proto::messages::network_message::MessageType::Presence(presence)),
                                 };
 
                                 let mut buf = Vec::new();
